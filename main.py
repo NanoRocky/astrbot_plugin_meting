@@ -293,8 +293,6 @@ class MetingPlugin(Star):
             yield event.plain_result("歌曲地址无效，无法播放")
             return
 
-        yield event.plain_result("正在下载歌曲...")
-
         try:
             temp_file = await self._download_song(song_url, event.get_sender_id())
             if not temp_file:
@@ -383,6 +381,7 @@ class MetingPlugin(Star):
             temp_file: 音频文件路径
         """
         if not self._ffmpeg_path:
+            logger.error("FFmpeg 路径为空")
             yield event.plain_result("未找到 FFmpeg，请确保已安装 FFmpeg")
             return
 
@@ -390,14 +389,18 @@ class MetingPlugin(Star):
             from pydub import AudioSegment
 
             AudioSegment.converter = self._ffmpeg_path
-        except ImportError:
+            logger.info(f"FFmpeg 路径已设置为: {self._ffmpeg_path}")
+        except ImportError as e:
+            logger.error(f"导入 pydub 失败: {e}")
             yield event.plain_result("缺少音频处理依赖，请联系管理员")
             return
 
         try:
+            logger.info(f"开始处理音频文件: {temp_file}")
             audio = AudioSegment.from_file(temp_file)
             total_duration = len(audio)
             segment_ms = SEGMENT_DURATION * 1000
+            logger.info(f"音频总时长: {total_duration}ms, 分段时长: {segment_ms}ms")
 
             segments = []
             for start in range(0, total_duration, segment_ms):
@@ -413,8 +416,11 @@ class MetingPlugin(Star):
                     f"{base_name}_segment_{idx}_{uuid.uuid4()}.wav",
                 )
                 try:
+                    logger.info(f"导出音频片段 {idx} 到: {segment_file}")
                     segment.export(segment_file, format="wav")
+                    logger.info(f"创建 Record 对象: {segment_file}")
                     record = Record.fromFileSystem(segment_file)
+                    logger.info(f"发送语音片段 {idx}")
                     yield event.chain_result([record])
                     await asyncio.sleep(SEND_INTERVAL)
                 except Exception as e:
