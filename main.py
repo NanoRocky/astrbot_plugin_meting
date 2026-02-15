@@ -27,7 +27,7 @@ MAX_FILE_SIZE = 50 * 1024 * 1024
 MAX_SESSION_AGE = 3600
 
 
-@register("astrbot_plugin_meting", "chuyegzs", "基于 MetingAPI 的点歌插件", "1.0.3")
+@register("astrbot_plugin_meting", "chuyegzs", "基于 MetingAPI 的点歌插件", "1.0.4")
 class MetingPlugin(Star):
     """MetingAPI 点歌插件
 
@@ -305,7 +305,8 @@ class MetingPlugin(Star):
                 return
 
             yield event.plain_result("正在分段录制歌曲...")
-            await self._split_and_send_audio(event, temp_file)
+            async for result in self._split_and_send_audio(event, temp_file):
+                yield result
 
         except aiohttp.ClientError as e:
             logger.error(f"下载歌曲时网络错误: {e}")
