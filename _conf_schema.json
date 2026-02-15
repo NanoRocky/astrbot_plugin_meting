@@ -1,0 +1,21 @@
+{
+  "api_url": {
+    "description": "MetingAPI 地址",
+    "type": "string",
+    "hint": "不带 api? 及后面的后缀，例如：https://api.example.com/meting"
+  },
+  "default_source": {
+    "description": "默认音源",
+    "type": "string",
+    "hint": "可选：tencent（QQ音乐）、netease（网易云）、kugou（酷狗）、kuwo（酷我）",
+    "default": "netease"
+  },
+  "search_result_count": {
+    "description": "搜索结果显示数量",
+    "type": "int",
+    "hint": "搜索结果显示的歌曲数量，范围：5-30",
+    "default": 10,
+    "minimum": 5,
+    "maximum": 30
+  }
+}
