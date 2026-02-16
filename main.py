@@ -73,7 +73,7 @@ class AudioFormatError(MetingPluginError):
     pass
 
 
-@register("astrbot_plugin_meting", "chuyegzs", "基于 MetingAPI 的点歌插件", "1.1.3")
+@register("astrbot_plugin_meting", "chuyegzs", "基于 MetingAPI 的点歌插件", "1.2.0")
 class MetingPlugin(Star):
     """MetingAPI 点歌插件
 
@@ -425,13 +425,83 @@ class MetingPlugin(Star):
         await self._set_session_source(session_id, "kuwo")
         yield event.plain_result("已切换音源为酷我")
 
-    @filter.command("点歌")
-    async def handle_dian_ge(self, event: AstrMessageEvent):
-        """处理点歌命令，支持搜索和播放
+    @filter.regex(r"^点歌(\d+)$")
+    async def play_song_by_index(self, event: AstrMessageEvent):
+        """播放指定序号的歌曲（点歌x格式，不带空格）
 
-        格式:
-        - 点歌 <关键词> - 搜索歌曲
-        - 点歌 <数字> - 播放搜索结果中的指定序号歌曲
+        Args:
+            event: 消息事件
+        """
+        await self._ensure_initialized()
+
+        message_str = event.get_message_str().strip()
+        session_id = event.unified_msg_origin
+
+        # 提取序号
+        match = re.match(r"^点歌(\d+)$", message_str)
+        if not match:
+            return
+
+        index = int(match.group(1))
+        logger.info(f"[点歌] 播放模式，序号: {index}")
+
+        session = await self._get_session(session_id)
+        logger.info(f"[点歌] 会话结果数量: {len(session.get('results', []))}")
+
+        if not session.get("results"):
+            yield event.plain_result('请先使用"点歌 歌曲名"搜索歌曲')
+            return
+
+        results = session["results"]
+        if index < 1 or index > len(results):
+            yield event.plain_result(
+                f"序号超出范围，请输入 1-{len(results)} 之间的序号"
+            )
+            return
+
+        song = results[index - 1]
+        song_url = song.get("url")
+
+        if not song_url:
+            yield event.plain_result("获取歌曲播放地址失败")
+            return
+
+        is_valid, reason = await self._validate_url(song_url)
+        if not is_valid:
+            logger.error(f"检测到不安全的 URL: {song_url}, 原因: {reason}")
+            yield event.plain_result(f"歌曲地址无效: {reason}")
+            return
+
+        try:
+            temp_file = await self._download_song(song_url, event.get_sender_id())
+            if not temp_file:
+                return
+
+            yield event.plain_result("正在分段录制歌曲...")
+            async for result in self._split_and_send_audio(
+                event, temp_file, session_id
+            ):
+                yield result
+
+        except asyncio.CancelledError:
+            logger.info("播放任务被取消")
+            yield event.plain_result("播放已取消")
+        except DownloadError as e:
+            logger.error(f"下载歌曲失败: {e}")
+            yield event.plain_result(f"下载失败: {e}")
+        except UnsafeURLError as e:
+            logger.error(f"URL 安全检查失败: {e}")
+            yield event.plain_result(f"安全检查失败: {e}")
+        except AudioFormatError as e:
+            logger.error(f"音频格式错误: {e}")
+            yield event.plain_result(f"格式不支持: {e}")
+        except Exception as e:
+            logger.error(f"播放歌曲时发生错误: {e}", exc_info=True)
+            yield event.plain_result("播放失败，请稍后重试")
+
+    @filter.command("点歌")
+    async def search_song(self, event: AstrMessageEvent):
+        """搜索歌曲（点歌 xxx格式，带空格）
 
         Args:
             event: 消息事件
@@ -442,110 +512,46 @@ class MetingPlugin(Star):
         session_id = event.unified_msg_origin
 
         # AstrBot 的 filter.command 会去掉命令前缀，只传递参数
-        # 所以 message_str 可能是 "1" 或 "一期一会" 而不是 "点歌1" 或 "点歌一期一会"
         # 如果消息以"点歌"开头，说明 filter.command 没有去掉前缀，手动处理
         if message_str.startswith("点歌"):
-            message_str = message_str[2:].strip()
-        elif message_str.startswith("#点歌"):
-            message_str = message_str[3:].strip()
-
-        logger.info(f"[点歌] 收到参数: '{message_str}', session_id: {session_id}")
-
-        # 检查是否为纯数字（播放模式）
-        if re.match(r"^(\d+)$", message_str):
-            # 播放模式
-            try:
-                index = int(message_str)
-                logger.info(f"[点歌] 播放模式，序号: {index}")
-            except (ValueError, IndexError):
-                return
-
-            session = await self._get_session(session_id)
-            logger.info(f"[点歌] 会话结果数量: {len(session.get('results', []))}")
-
-            if not session.get("results"):
-                yield event.plain_result('请先使用"点歌"命令搜索歌曲')
-                return
-
-            results = session["results"]
-            if index < 1 or index > len(results):
-                yield event.plain_result(
-                    f"序号超出范围，请输入 1-{len(results)} 之间的序号"
-                )
-                return
-
-            song = results[index - 1]
-            song_url = song.get("url")
-
-            if not song_url:
-                yield event.plain_result("获取歌曲播放地址失败")
-                return
-
-            is_valid, reason = await self._validate_url(song_url)
-            if not is_valid:
-                logger.error(f"检测到不安全的 URL: {song_url}, 原因: {reason}")
-                yield event.plain_result(f"歌曲地址无效: {reason}")
-                return
-
-            try:
-                temp_file = await self._download_song(song_url, event.get_sender_id())
-                if not temp_file:
-                    return
-
-                yield event.plain_result("正在分段录制歌曲...")
-                async for result in self._split_and_send_audio(
-                    event, temp_file, session_id
-                ):
-                    yield result
-
-            except asyncio.CancelledError:
-                logger.info("播放任务被取消")
-                yield event.plain_result("播放已取消")
-            except DownloadError as e:
-                logger.error(f"下载歌曲失败: {e}")
-                yield event.plain_result(f"下载失败: {e}")
-            except UnsafeURLError as e:
-                logger.error(f"URL 安全检查失败: {e}")
-                yield event.plain_result(f"安全检查失败: {e}")
-            except AudioFormatError as e:
-                logger.error(f"音频格式错误: {e}")
-                yield event.plain_result(f"格式不支持: {e}")
-            except Exception as e:
-                logger.error(f"播放歌曲时发生错误: {e}", exc_info=True)
-                yield event.plain_result("播放失败，请稍后重试")
+            keyword = message_str[2:].strip()
         else:
-            # 搜索模式
             keyword = message_str
 
-            if not keyword:
-                yield event.plain_result("请输入要搜索的歌曲名称，例如：点歌一期一会")
-                return
+        # 如果是纯数字，提示用户使用正确的格式
+        if re.match(r"^(\d+)$", keyword):
+            yield event.plain_result(
+                '播放歌曲请使用"点歌x"格式（不带空格），例如：点歌1'
+            )
+            return
 
-            logger.info(f"[点歌] 搜索模式，关键词: {keyword}")
+        if not keyword:
+            yield event.plain_result("请输入要搜索的歌曲名称，例如：点歌 一期一会")
+            return
 
-            api_url = self.get_api_url()
-            if not api_url:
-                yield event.plain_result("请先在插件配置中设置 MetingAPI 地址")
-                return
+        logger.info(f"[点歌] 搜索模式，关键词: {keyword}")
 
-            source = await self._get_session_source(session_id)
+        api_url = self.get_api_url()
+        if not api_url:
+            yield event.plain_result("请先在插件配置中设置 MetingAPI 地址")
+            return
 
-            try:
-                params = {"server": source, "type": "search", "id": keyword}
-                async with self._http_session.get(
-                    f"{api_url}/api", params=params
-                ) as resp:
-                    if resp.status != 200:
-                        logger.error(f"搜索失败，API 返回状态码: {resp.status}")
-                        yield event.plain_result("搜索失败，请稍后重试")
-                        return
+        source = await self._get_session_source(session_id)
 
-                    try:
-                        data = await resp.json()
-                    except Exception as e:
-                        logger.error(f"解析 JSON 响应失败: {e}")
-                        yield event.plain_result("搜索失败，请稍后重试")
-                        return
+        try:
+            params = {"server": source, "type": "search", "id": keyword}
+            async with self._http_session.get(f"{api_url}/api", params=params) as resp:
+                if resp.status != 200:
+                    logger.error(f"搜索失败，API 返回状态码: {resp.status}")
+                    yield event.plain_result("搜索失败，请稍后重试")
+                    return
+
+                try:
+                    data = await resp.json()
+                except Exception as e:
+                    logger.error(f"解析 JSON 响应失败: {e}")
+                    yield event.plain_result("搜索失败，请稍后重试")
+                    return
 
                 if not isinstance(data, list):
                     logger.error(f"API 返回异常数据类型: {type(data)}, 内容: {data}")
@@ -571,12 +577,12 @@ class MetingPlugin(Star):
                 message += '\n发送"点歌1"播放第一首歌曲'
                 yield event.plain_result(message)
 
-            except aiohttp.ClientError as e:
-                logger.error(f"搜索歌曲时网络错误: {e}")
-                yield event.plain_result("搜索失败，请检查网络连接")
-            except Exception as e:
-                logger.error(f"搜索歌曲时发生错误: {e}")
-                yield event.plain_result("搜索失败，请稍后重试")
+        except aiohttp.ClientError as e:
+            logger.error(f"搜索歌曲时网络错误: {e}")
+            yield event.plain_result("搜索失败，请检查网络连接")
+        except Exception as e:
+            logger.error(f"搜索歌曲时发生错误: {e}")
+            yield event.plain_result("搜索失败，请稍后重试")
 
     def _get_file_extension_from_content_type(self, content_type: str) -> str:
         """根据Content-Type获取文件扩展名
