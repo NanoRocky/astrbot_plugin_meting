@@ -73,7 +73,7 @@ class AudioFormatError(MetingPluginError):
     pass
 
 
-@register("astrbot_plugin_meting", "chuyegzs", "基于 MetingAPI 的点歌插件", "1.1.0")
+@register("astrbot_plugin_meting", "chuyegzs", "基于 MetingAPI 的点歌插件", "1.1.1")
 class MetingPlugin(Star):
     """MetingAPI 点歌插件
 
@@ -441,8 +441,9 @@ class MetingPlugin(Star):
         message_str = event.get_message_str().strip()
         session_id = event.unified_msg_origin
 
-        # 检查是否为"点歌数字"格式（支持"点歌1"、"点歌 1"等）
-        match = re.match(r"^点歌\s*(\d+)$", message_str)
+        # 检查是否为"点歌数字"格式（仅支持"点歌1"，不支持"点歌 1"）
+        # "点歌 1"会被当作搜索关键词"1"
+        match = re.match(r"^点歌(\d+)$", message_str)
         if match:
             # 播放模式
             try:
