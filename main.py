@@ -73,7 +73,7 @@ class AudioFormatError(MetingPluginError):
     pass
 
 
-@register("astrbot_plugin_meting", "chuyegzs", "基于 MetingAPI 的点歌插件", "1.1.2")
+@register("astrbot_plugin_meting", "chuyegzs", "基于 MetingAPI 的点歌插件", "1.1.3")
 class MetingPlugin(Star):
     """MetingAPI 点歌插件
 
@@ -441,25 +441,27 @@ class MetingPlugin(Star):
         message_str = event.get_message_str().strip()
         session_id = event.unified_msg_origin
 
-        # 去掉可能的前缀（如 #）
-        if message_str.startswith("#"):
-            message_str = message_str[1:].strip()
+        # AstrBot 的 filter.command 会去掉命令前缀，只传递参数
+        # 所以 message_str 可能是 "1" 或 "一期一会" 而不是 "点歌1" 或 "点歌一期一会"
+        # 如果消息以"点歌"开头，说明 filter.command 没有去掉前缀，手动处理
+        if message_str.startswith("点歌"):
+            message_str = message_str[2:].strip()
+        elif message_str.startswith("#点歌"):
+            message_str = message_str[3:].strip()
 
-        logger.debug(f"[点歌] 收到消息: '{message_str}', session_id: {session_id}")
+        logger.info(f"[点歌] 收到参数: '{message_str}', session_id: {session_id}")
 
-        # 检查是否为"点歌数字"格式（仅支持"点歌1"，不支持"点歌 1"）
-        # "点歌 1"会被当作搜索关键词"1"
-        match = re.match(r"^点歌(\d+)$", message_str)
-        if match:
+        # 检查是否为纯数字（播放模式）
+        if re.match(r"^(\d+)$", message_str):
             # 播放模式
             try:
-                index = int(match.group(1))
+                index = int(message_str)
                 logger.info(f"[点歌] 播放模式，序号: {index}")
             except (ValueError, IndexError):
                 return
 
             session = await self._get_session(session_id)
-            logger.debug(f"[点歌] 会话结果数量: {len(session.get('results', []))}")
+            logger.info(f"[点歌] 会话结果数量: {len(session.get('results', []))}")
 
             if not session.get("results"):
                 yield event.plain_result('请先使用"点歌"命令搜索歌曲')
@@ -513,14 +515,13 @@ class MetingPlugin(Star):
                 yield event.plain_result("播放失败，请稍后重试")
         else:
             # 搜索模式
-            if message_str.startswith("点歌"):
-                keyword = message_str[2:].strip()
-            else:
-                keyword = message_str
+            keyword = message_str
 
             if not keyword:
                 yield event.plain_result("请输入要搜索的歌曲名称，例如：点歌一期一会")
                 return
+
+            logger.info(f"[点歌] 搜索模式，关键词: {keyword}")
 
             api_url = self.get_api_url()
             if not api_url:
