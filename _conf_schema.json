@@ -1,8 +1,8 @@
 {
-  "api_url": {
-    "description": "MetingAPI 地址",
+  "api_template": {
+    "description": "MetingAPI 调用模板",
     "type": "string",
-    "hint": "不带 api? 及后面的后缀，例如：https://api.example.com/meting"
+    "hint": "完整API调用地址，使用占位符: :server, :type, :id, :r。例如：https://api.i-meto.com/meting/api?server=:server&type=:type&id=:id&r=:r"
   },
   "default_source": {
     "description": "默认音源",

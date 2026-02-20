@@ -227,13 +227,35 @@ class MetingPlugin(Star):
 
         return value
 
-    def get_api_url(self) -> str:
-        """获取 API 地址
+    def get_api_template(self) -> str:
+        """获取 API 调用模板
 
         Returns:
-            str: API 地址，如果未配置则返回空字符串
+            str: API 模板，如果未配置则返回空字符串
         """
-        return self._get_config("api_url", "", lambda x: isinstance(x, str) and x)
+        return self._get_config(
+            "api_template", "", lambda x: isinstance(x, str) and x and ":server" in x
+        )
+
+    def _build_api_url(
+        self, template: str, server: str, req_type: str, id_val: str
+    ) -> str:
+        """根据模板构建 API URL
+
+        Args:
+            template: API 模板
+            server: 音源
+            req_type: 请求类型
+            id_val: ID 值
+
+        Returns:
+            str: 完整的 API URL
+        """
+        url = template.replace(":server", server)
+        url = url.replace(":type", req_type)
+        url = url.replace(":id", id_val)
+        url = url.replace(":r", str(int(time.time() * 1000)))
+        return url
 
     def get_default_source(self) -> str:
         """获取默认音源
@@ -408,29 +430,6 @@ class MetingPlugin(Star):
             logger.error(f"URL 验证失败: {e}")
             return False, f"URL 验证异常: {e}"
 
-    async def _validate_api_url(self, url: str) -> tuple[bool, str]:
-        """验证 API URL 是否安全
-
-        Args:
-            url: API URL
-
-        Returns:
-            tuple[bool, str]: (是否安全, 失败原因)
-        """
-        is_valid, reason = await self._validate_url(url)
-        if not is_valid:
-            logger.warning(f"[API URL 验证] URL 验证失败: {url}, 原因: {reason}")
-            return False, reason
-
-        parsed = urlparse(url)
-        hostname = parsed.hostname or ""
-        if hostname in ("localhost", "127.0.0.1", "0.0.0.0"):
-            logger.warning(f"[API URL 验证] 禁止使用本地地址: {hostname}")
-            return False, "API 地址不允许使用本地地址"
-
-        logger.debug(f"[API URL 验证] URL 验证通过: {url}")
-        return True, ""
-
     async def _cleanup_old_sessions_locked(self):
         """清理过期的会话状态（必须在持锁状态下调用）"""
         current_time = time.time()
@@ -558,9 +557,9 @@ class MetingPlugin(Star):
         await self._set_session_source(session_id, "kuwo")
         yield event.plain_result("已切换音源为酷我")
 
-    @filter.regex(r"^点歌(\d+)$")
+    @filter.regex(r"^点歌\s+(\d+)$")
     async def play_song_by_index(self, event: AstrMessageEvent):
-        """播放指定序号的歌曲（点歌x格式，不带空格）
+        """播放指定序号的歌曲（点歌 x格式，带空格）
 
         Args:
             event: 消息事件
@@ -570,7 +569,7 @@ class MetingPlugin(Star):
         message_str = event.get_message_str().strip()
         session_id = event.unified_msg_origin
 
-        match = re.match(r"^点歌(\d+)$", message_str)
+        match = re.match(r"^点歌\s+(\d+)$", message_str)
         if not match:
             return
 
@@ -581,7 +580,7 @@ class MetingPlugin(Star):
         logger.info(f"[点歌] 会话结果数量: {len(results)}")
 
         if not results:
-            yield event.plain_result('请先使用"点歌 歌曲名"搜索歌曲')
+            yield event.plain_result('请先使用"搜歌 歌曲名"搜索歌曲')
             return
 
         if index < 1 or index > len(results):
@@ -630,9 +629,9 @@ class MetingPlugin(Star):
             logger.error(f"播放歌曲时发生错误: {e}", exc_info=True)
             yield event.plain_result("播放失败，请稍后重试")
 
-    @filter.command("点歌")
+    @filter.command("搜歌")
     async def search_song(self, event: AstrMessageEvent):
-        """搜索歌曲（点歌 xxx格式，带空格）
+        """搜索歌曲（搜歌 xxx格式）
 
         Args:
             event: 消息事件
@@ -642,38 +641,37 @@ class MetingPlugin(Star):
         message_str = event.get_message_str().strip()
         session_id = event.unified_msg_origin
 
-        if message_str.startswith("点歌"):
+        if message_str.startswith("搜歌"):
             keyword = message_str[2:].strip()
         else:
             keyword = message_str
 
         if not keyword:
-            yield event.plain_result("请输入要搜索的歌曲名称，例如：点歌 一期一会")
+            yield event.plain_result("请输入要搜索的歌曲名称，例如：搜歌 一期一会")
             return
 
-        logger.info(f"[点歌] 搜索模式，关键词: {keyword}")
+        logger.info(f"[搜歌] 搜索模式，关键词: {keyword}")
 
-        api_url = self.get_api_url()
-        if not api_url:
-            yield event.plain_result("请先在插件配置中设置 MetingAPI 地址")
+        api_template = self.get_api_template()
+        if not api_template:
+            yield event.plain_result("请先在插件配置中设置 MetingAPI 模板")
             return
 
-        is_valid, reason = await self._validate_api_url(api_url)
+        source = await self._get_session_source(session_id)
+        api_url = self._build_api_url(api_template, source, "search", keyword)
+        logger.info(f"[搜歌] API URL: {api_url}, 音源: {source}")
+
+        is_valid, reason = await self._validate_url(api_url)
         if not is_valid:
             logger.error(f"API URL 验证失败: {reason}")
             yield event.plain_result(f"API 地址配置无效: {reason}")
             return
 
-        source = await self._get_session_source(session_id)
-        logger.info(f"[点歌] API URL: {api_url}, 音源: {source}, 关键词: {keyword}")
-
         try:
-            params = {"server": source, "type": "search", "id": keyword}
-            api_endpoint = f"{api_url}/api"
-            logger.debug(f"[点歌] 请求 API: {api_endpoint}, 参数: {params}")
+            logger.debug(f"[搜歌] 请求 API: {api_url}")
 
-            async with self._http_session.get(api_endpoint, params=params) as resp:
-                logger.debug(f"[点歌] API 响应状态码: {resp.status}")
+            async with self._http_session.get(api_url) as resp:
+                logger.debug(f"[搜歌] API 响应状态码: {resp.status}")
                 if resp.status != 200:
                     response_text = await resp.text()
                     logger.error(
@@ -685,7 +683,7 @@ class MetingPlugin(Star):
                 try:
                     data = await resp.json()
                     logger.debug(
-                        f"[点歌] API 返回数据类型: {type(data)}, 数据量: {len(data) if isinstance(data, list) else 'N/A'}"
+                        f"[搜歌] API 返回数据类型: {type(data)}, 数据量: {len(data) if isinstance(data, list) else 'N/A'}"
                     )
                 except Exception as e:
                     response_text = await resp.text()
@@ -693,7 +691,7 @@ class MetingPlugin(Star):
                         f"解析 JSON 响应失败: {e}, 响应内容: {response_text[:500]}"
                     )
                     yield event.plain_result(
-                        f"API 响应解析失败，请检查 API 地址是否正确"
+                        f"API 响应解析失败，请检查 API 模板是否正确"
                     )
                     return
 
@@ -716,7 +714,7 @@ class MetingPlugin(Star):
                 artist = song.get("author", "未知歌手")
                 message += f"{idx}. {name} - {artist}\n"
 
-            message += '\n发送"点歌1"播放第一首歌曲'
+            message += '\n发送"点歌 1"播放第一首歌曲'
             yield event.plain_result(message)
 
         except aiohttp.ClientError as e:
