@@ -1,14 +1,20 @@
 {
-  "api_template": {
-    "description": "MetingAPI 调用模板",
+  "api_url": {
+    "description": "MetingAPI 地址",
     "type": "string",
-    "hint": "完整API调用地址，使用占位符: :server, :type, :id, :r。例如：https://api.i-meto.com/meting/api?server=:server&type=:type&id=:id&r=:r"
+    "hint": "不带后面的后缀，例如：https://api.example.com/meting。若API类型选择3，此处填写完整模板，如：https://api.i-meto.com/meting/api?server=:server&type=:type&id=:id&r=:r"
   },
   "default_source": {
     "description": "默认音源",
     "type": "string",
     "hint": "可选：tencent（QQ音乐）、netease（网易云）、kugou（酷狗）、kuwo（酷我）",
     "default": "netease"
+  },
+  "api_type": {
+    "description": "API 类型",
+    "type": "int",
+    "hint": "1: Node API（默认）, 2: PHP API, 3: 自定义参数（在MetingAPI地址填写完整模板）",
+    "default": 1
   },
   "search_result_count": {
     "description": "搜索结果显示数量",

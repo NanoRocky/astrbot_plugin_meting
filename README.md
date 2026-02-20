@@ -2,7 +2,7 @@
 
 基于 MetingAPI 的点歌插件，支持QQ音乐、网易云、酷狗、酷我等音源。
 
-**当前版本：v1.0.3**
+**当前版本：v1.0.4**
 
 ## 功能特性
 
@@ -10,28 +10,32 @@
 - 会话级音源切换，不影响其他会话
 - 智能语音分段发送，自动处理超过2分钟的歌曲
 - 简单易用的命令交互
-- 支持自定义 API 模板，最大限度兼容各种 MetingAPI
+- 支持三种 API 类型，最大限度兼容各种 MetingAPI
 
 ## 安装
 
 1. （1）将插件目录 `astrbot_plugin_meting` 放入 AstrBot 的 `data/plugins` 目录
 （2）WebUI中从链接安装:https://github.com/chuyegzs/astrbot_plugin_meting
 2. 在 AstrBot WebUI 的插件管理处启用该插件
-3. 在插件配置中设置 MetingAPI 模板
+3. 在插件配置中设置 MetingAPI 地址和类型
 
 ## 配置
 
 在 AstrBot WebUI 的插件配置页面中，设置以下参数：
 
-### MetingAPI 模板
-- **描述**：MetingAPI 调用模板，使用占位符替换参数
-- **占位符**：
-  - `:server` - 音源（tencent/netease/kugou/kuwo）
-  - `:type` - 请求类型（search/url/pic/lrc等）
-  - `:id` - 搜索关键词或歌曲ID
-  - `:r` - 随机数（自动生成时间戳）
-- **示例**：`https://api.i-meto.com/meting/api?server=:server&type=:type&id=:id&r=:r`
-- **初叶🍂免费音源（会员状态直接访问https://musicapi.chuyel.top）**：`https://musicapi.chuyel.top/meting/api?server=:server&type=:type&id=:id&r=:r`
+### MetingAPI 地址
+- **描述**：MetingAPI 服务地址
+- **格式**：根据 API 类型填写
+  - **Node API（类型1）**：不带后缀，如 `https://api.example.com/meting`
+  - **PHP API（类型2）**：完整地址，如 `https://api.example.com/meting/api.php`
+  - **自定义参数（类型3）**：完整模板，如 `https://api.i-meto.com/meting/api?server=:server&type=:type&id=:id&r=:r`
+
+### API 类型
+- **描述**：选择 MetingAPI 的类型
+- **可选值**：
+  - `1` - Node API（默认）：标准 MetingAPI，自动拼接 `/api` 路径
+  - `2` - PHP API：使用 `keyword` 参数传递搜索词
+  - `3` - 自定义参数：使用占位符 `:server`、`:type`、`:id`、`:r` 构建请求
 
 ### 默认音源
 - **描述**：默认使用的音乐平台
@@ -128,24 +132,23 @@ brew install ffmpeg
 | 酷狗 | kugou |
 | 酷我 | kuwo |
 
-### API 模板示例
+### API 类型说明
 
-不同 MetingAPI 服务的模板格式可能不同，以下是常见格式：
+**1. Node API（默认）**
+- 标准 MetingAPI 格式
+- 请求地址：`{api_url}/api?server={server}&type={type}&id={id}`
+- 示例：`https://api.example.com/meting/api?server=netease&type=search&id=一期一会`
 
-**标准格式：**
-```
-https://api.example.com/meting/api?server=:server&type=:type&id=:id&r=:r
-```
+**2. PHP API**
+- PHP 版本 MetingAPI
+- 请求地址：`{api_url}?server={server}&type=search&id=0&keyword={keyword}&dwrc=false`
+- 示例：`https://api.example.com/api.php?server=netease&type=search&id=0&keyword=一期一会&dwrc=false`
 
-**简化格式：**
-```
-https://api.example.com/api?server=:server&type=:type&id=:id
-```
-
-**其他格式：**
-```
-https://api.example.com/meting?server=:server&type=:type&id=:id&r=:r
-```
+**3. 自定义参数**
+- 完全自定义请求格式
+- 支持占位符：`:server`、`:type`、`:id`、`:r`
+- 示例模板：`https://api.i-meto.com/meting/api?server=:server&type=:type&id=:id&r=:r`
+- 替换后：`https://api.i-meto.com/meting/api?server=netease&type=search&id=一期一会&r=1708123456789`
 
 ### 语音分段机制
 
@@ -162,14 +165,15 @@ QQ 语音时长上限为2分钟，插件会自动将长歌曲分割为多个2分
 
 ## 常见问题
 
-### Q: 提示"请先在插件配置中设置 MetingAPI 模板"
-A: 请在 AstrBot WebUI 的插件配置页面中填写正确的 MetingAPI 模板。
+### Q: 提示"请先在插件配置中设置 MetingAPI 地址"
+A: 请在 AstrBot WebUI 的插件配置页面中填写正确的 MetingAPI 地址。
 
 ### Q: 搜索歌曲时提示"网络错误"
 A: 请检查：
-1. MetingAPI 模板是否正确
-2. 网络连接是否正常
-3. MetingAPI 服务是否可用
+1. MetingAPI 地址是否正确
+2. API 类型是否匹配
+3. 网络连接是否正常
+4. MetingAPI 服务是否可用
 
 ### Q: 播放歌曲时提示"缺少 pydub 依赖"
 A: 请确保已安装 FFmpeg，并重新安装插件依赖。

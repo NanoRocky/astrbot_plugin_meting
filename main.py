@@ -227,20 +227,28 @@ class MetingPlugin(Star):
 
         return value
 
-    def get_api_template(self) -> str:
-        """获取 API 调用模板
+    def get_api_url(self) -> str:
+        """获取 API 地址
 
         Returns:
-            str: API 模板，如果未配置则返回空字符串
+            str: API 地址，如果未配置则返回空字符串
+        """
+        return self._get_config("api_url", "", lambda x: isinstance(x, str) and x)
+
+    def get_api_type(self) -> int:
+        """获取 API 类型
+
+        Returns:
+            int: API 类型，1=Node API, 2=PHP API, 3=自定义参数
         """
         return self._get_config(
-            "api_template", "", lambda x: isinstance(x, str) and x and ":server" in x
+            "api_type", 1, lambda x: isinstance(x, int) and x in (1, 2, 3)
         )
 
-    def _build_api_url(
+    def _build_api_url_for_custom(
         self, template: str, server: str, req_type: str, id_val: str
     ) -> str:
-        """根据模板构建 API URL
+        """根据模板构建 API URL（自定义参数类型）
 
         Args:
             template: API 模板
@@ -652,48 +660,71 @@ class MetingPlugin(Star):
 
         logger.info(f"[搜歌] 搜索模式，关键词: {keyword}")
 
-        api_template = self.get_api_template()
-        if not api_template:
-            yield event.plain_result("请先在插件配置中设置 MetingAPI 模板")
+        api_url = self.get_api_url()
+        api_type = self.get_api_type()
+
+        if not api_url:
+            yield event.plain_result("请先在插件配置中设置 MetingAPI 地址")
             return
 
         source = await self._get_session_source(session_id)
-        api_url = self._build_api_url(api_template, source, "search", keyword)
-        logger.info(f"[搜歌] API URL: {api_url}, 音源: {source}")
-
-        is_valid, reason = await self._validate_url(api_url)
-        if not is_valid:
-            logger.error(f"API URL 验证失败: {reason}")
-            yield event.plain_result(f"API 地址配置无效: {reason}")
-            return
 
         try:
-            logger.debug(f"[搜歌] 请求 API: {api_url}")
-
-            async with self._http_session.get(api_url) as resp:
-                logger.debug(f"[搜歌] API 响应状态码: {resp.status}")
-                if resp.status != 200:
-                    response_text = await resp.text()
-                    logger.error(
-                        f"搜索失败，API 返回状态码: {resp.status}, 响应: {response_text[:500]}"
-                    )
-                    yield event.plain_result(f"搜索失败，API 返回状态码: {resp.status}")
-                    return
-
-                try:
+            if api_type == 3:
+                api_endpoint = self._build_api_url_for_custom(
+                    api_url, source, "search", keyword
+                )
+                logger.info(f"[搜歌] 自定义API URL: {api_endpoint}")
+                async with self._http_session.get(api_endpoint) as resp:
+                    if resp.status != 200:
+                        response_text = await resp.text()
+                        logger.error(
+                            f"搜索失败，API 返回状态码: {resp.status}, 响应: {response_text[:500]}"
+                        )
+                        yield event.plain_result(
+                            f"搜索失败，API 返回状态码: {resp.status}"
+                        )
+                        return
                     data = await resp.json()
-                    logger.debug(
-                        f"[搜歌] API 返回数据类型: {type(data)}, 数据量: {len(data) if isinstance(data, list) else 'N/A'}"
-                    )
-                except Exception as e:
-                    response_text = await resp.text()
-                    logger.error(
-                        f"解析 JSON 响应失败: {e}, 响应内容: {response_text[:500]}"
-                    )
-                    yield event.plain_result(
-                        f"API 响应解析失败，请检查 API 模板是否正确"
-                    )
-                    return
+            elif api_type == 2:
+                params = {
+                    "server": source,
+                    "type": "search",
+                    "id": "0",
+                    "dwrc": "false",
+                    "keyword": keyword,
+                }
+                logger.info(f"[搜歌] PHP API URL: {api_url}, 参数: {params}")
+                async with self._http_session.get(api_url, params=params) as resp:
+                    if resp.status != 200:
+                        response_text = await resp.text()
+                        logger.error(
+                            f"搜索失败，API 返回状态码: {resp.status}, 响应: {response_text[:500]}"
+                        )
+                        yield event.plain_result(
+                            f"搜索失败，API 返回状态码: {resp.status}"
+                        )
+                        return
+                    data = await resp.json()
+            else:
+                params = {"server": source, "type": "search", "id": keyword}
+                api_endpoint = f"{api_url}/api"
+                logger.info(f"[搜歌] Node API URL: {api_endpoint}, 参数: {params}")
+                async with self._http_session.get(api_endpoint, params=params) as resp:
+                    if resp.status != 200:
+                        response_text = await resp.text()
+                        logger.error(
+                            f"搜索失败，API 返回状态码: {resp.status}, 响应: {response_text[:500]}"
+                        )
+                        yield event.plain_result(
+                            f"搜索失败，API 返回状态码: {resp.status}"
+                        )
+                        return
+                    data = await resp.json()
+
+            logger.debug(
+                f"[搜歌] API 返回数据类型: {type(data)}, 数据量: {len(data) if isinstance(data, list) else 'N/A'}"
+            )
 
             if not isinstance(data, list):
                 logger.error(f"API 返回异常数据类型: {type(data)}, 内容: {data}")
