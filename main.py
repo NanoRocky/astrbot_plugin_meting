@@ -798,8 +798,10 @@ class MetingPlugin(Star):
 
         while retry_count < max_retries:
             try:
-                assert self._download_semaphore is not None
-                async with self._download_semaphore:
+                if self._download_semaphore is None:
+                    raise DownloadError("下载限流器未初始化")
+                semaphore = self._download_semaphore
+                async with semaphore:
                     logger.debug(
                         f"开始下载歌曲 (尝试 {retry_count + 1}/{max_retries}): {url}"
                     )
