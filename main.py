@@ -468,8 +468,11 @@ class MetingPlugin(Star):
         while True:
             try:
                 await asyncio.sleep(3600)
-                assert self._sessions_lock is not None
-                async with self._sessions_lock:
+                lock = self._sessions_lock
+                if lock is None:
+                    logger.error("定期清理任务检测到 _sessions_lock 为 None，停止清理循环")
+                    break
+                async with lock:
                     await self._cleanup_old_sessions_locked()
                 self._cleanup_temp_files()
                 logger.debug("定期清理完成")
