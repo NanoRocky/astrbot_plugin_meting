@@ -776,7 +776,7 @@ class MetingPlugin(Star):
                     data = await resp.json()
             else:
                 params = {"server": source, "type": "search", "id": keyword}
-                api_endpoint = f"{api_url}api/"
+                api_endpoint = f"{api_url}api"
                 logger.info(f"[搜歌] Node API URL: {api_endpoint}, 参数: {params}")
                 if self._http_session is None:
                     return None
