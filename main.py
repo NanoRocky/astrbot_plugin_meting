@@ -6,13 +6,12 @@ import shutil
 import tempfile
 import time
 import uuid
+import aiohttp
+from pydub import AudioSegment
 from collections.abc import Callable
 from typing import Any, TypeVar
 from urllib.parse import parse_qs, urljoin, urlparse
-
-import aiohttp
 from packaging.version import parse as parse_version
-
 from astrbot.api import logger
 from astrbot.api.event import AstrMessageEvent, filter
 from astrbot.api.message_components import Json, Record
@@ -280,7 +279,7 @@ class MetingPlugin(Star):
             str: API 地址，如果未配置则返回空字符串
         """
         api_config = self._get_api_config()
-        api_url = api_config.get("api_url", "https://musictsapi.chuye.us.kg/")
+        api_url = api_config.get("api_url", "https://musicapi.chuyel.top/meting/")
         if api_url == "custom":
             # 仅当选择了自定义 API 类型时才使用 custom_api_url 配置项
             url = api_config.get("custom_api_url", "")
@@ -288,10 +287,13 @@ class MetingPlugin(Star):
                 logger.warning(
                     "API 地址设置为 custom 但未填写 custom_api_url，将回退到默认接口"
                 )
-                url = "https://musictsapi.chuye.us.kg/"
+                url = "https://musicapi.chuyel.top/meting/"
         else:
             url = api_url
-        return url.replace("http://", "https://") if url else ""
+        if not url:
+            return ""
+        url = url.replace("http://", "https://")
+        return url if url.endswith("/") else f"{url}/"
 
     def get_api_type(self) -> int:
         """获取 API 类型
@@ -355,7 +357,8 @@ class MetingPlugin(Star):
         url = str(
             self._get_config("api_sign_url", "https://oiapi.net/api/QQMusicJSONArk/")
         ).rstrip("/")
-        return url.replace("http://", "https://")
+        url = url.replace("http://", "https://")
+        return url if url.endswith("/") else f"{url}/"
 
     def use_music_card(self) -> bool:
         """音乐卡片开关
@@ -589,7 +592,7 @@ class MetingPlugin(Star):
         Args:
             url: 要验证的 URL
             strict_dns: 是否严格检查 DNS 解析，默认为 True。
-                       对于歌曲下载 URL 可设为 False，允许 DNS 解析失败
+                        对于歌曲下载 URL 可设为 False，允许 DNS 解析失败
 
         Returns:
             tuple[bool, str]: (是否安全, 失败原因)
@@ -660,7 +663,11 @@ class MetingPlugin(Star):
                     break
                 async with lock:
                     await self._cleanup_old_sessions_locked()
-                self._cleanup_temp_files()
+
+                # 在线程池中执行清理文件操作
+                loop = asyncio.get_running_loop()
+                await loop.run_in_executor(None, self._cleanup_temp_files)
+
                 logger.debug("定期清理完成")
             except asyncio.CancelledError:
                 break
@@ -769,7 +776,7 @@ class MetingPlugin(Star):
                     data = await resp.json()
             else:
                 params = {"server": source, "type": "search", "id": keyword}
-                api_endpoint = f"{api_url}/api"
+                api_endpoint = f"{api_url}api/"
                 logger.info(f"[搜歌] Node API URL: {api_endpoint}, 参数: {params}")
                 if self._http_session is None:
                     return None
@@ -967,111 +974,73 @@ class MetingPlugin(Star):
         await self._set_session_source(session_id, "kuwo")
         yield event.plain_result("已切换音源为酷我")
 
-    @filter.command("网易点歌", alias={"网易云点歌", "网抑云点歌", "网易云音乐点歌"})
-    async def play_netease_first_song(self, event: AstrMessageEvent):
-        """网易云点歌"""
+    async def _handle_specific_source_play(
+        self, event: AstrMessageEvent, source: str, prefixes: list[str]
+    ):
+        """处理特定音源的点歌请求
+
+        Args:
+            event: 消息事件
+            source: 音源标识
+            prefixes: 命令前缀列表
+        """
         await self._ensure_initialized()
         msg = event.get_message_str().strip()
         kw = msg
-        for prefix in ["网易云音乐点歌", "网易云点歌", "网抑云点歌", "网易点歌"]:
+        for prefix in prefixes:
             if kw.startswith(prefix):
                 kw = kw[len(prefix) :].strip()
                 break
+
         if not kw:
-            yield event.plain_result("请输入要点播的歌曲名称，例如：网易点歌 一期一会")
+            yield event.plain_result(
+                f"请输入要点播的歌曲名称，例如：{prefixes[0]} 一期一会"
+            )
             return
 
-        results = await self._perform_search(kw, "netease")
+        results = await self._perform_search(kw, source)
         if not results:
             yield event.plain_result(f"未找到歌曲: {kw}")
             return
 
         song = results[0]
         if "source" not in song:
-            song["source"] = "netease"
+            song["source"] = source
 
         async for result in self._play_song_logic(
             event, song, event.unified_msg_origin
+        ):
+            yield result
+
+    @filter.command("网易点歌", alias={"网易云点歌", "网抑云点歌", "网易云音乐点歌"})
+    async def play_netease_first_song(self, event: AstrMessageEvent):
+        """网易云点歌"""
+        async for result in self._handle_specific_source_play(
+            event, "netease", ["网易云音乐点歌", "网易云点歌", "网抑云点歌", "网易点歌"]
         ):
             yield result
 
     @filter.command("腾讯点歌", alias={"QQ点歌", "QQ音乐点歌", "腾讯音乐点歌"})
     async def play_tencent_first_song(self, event: AstrMessageEvent):
         """QQ音乐点歌"""
-        await self._ensure_initialized()
-        msg = event.get_message_str().strip()
-        kw = msg
-        for prefix in ["腾讯音乐点歌", "QQ音乐点歌", "腾讯点歌", "QQ点歌"]:
-            if kw.startswith(prefix):
-                kw = kw[len(prefix) :].strip()
-                break
-        if not kw:
-            yield event.plain_result("请输入要点播的歌曲名称，例如：QQ点歌 一期一会")
-            return
-
-        results = await self._perform_search(kw, "tencent")
-        if not results:
-            yield event.plain_result(f"未找到歌曲: {kw}")
-            return
-
-        song = results[0]
-        if "source" not in song:
-            song["source"] = "tencent"
-
-        async for result in self._play_song_logic(
-            event, song, event.unified_msg_origin
+        async for result in self._handle_specific_source_play(
+            event, "tencent", ["腾讯音乐点歌", "QQ音乐点歌", "腾讯点歌", "QQ点歌"]
         ):
             yield result
 
     @filter.command("酷狗点歌", alias={"酷狗音乐点歌"})
     async def play_kugou_first_song(self, event: AstrMessageEvent):
         """酷狗点歌"""
-        await self._ensure_initialized()
-        msg = event.get_message_str().strip()
-        kw = msg
-        if kw.startswith("酷狗点歌"):
-            kw = kw[4:].strip()
-        if not kw:
-            yield event.plain_result("请输入要点播的歌曲名称，例如：酷狗点歌 一期一会")
-            return
-
-        results = await self._perform_search(kw, "kugou")
-        if not results:
-            yield event.plain_result(f"未找到歌曲: {kw}")
-            return
-
-        song = results[0]
-        if "source" not in song:
-            song["source"] = "kugou"
-
-        async for result in self._play_song_logic(
-            event, song, event.unified_msg_origin
+        async for result in self._handle_specific_source_play(
+            event, "kugou", ["酷狗音乐点歌", "酷狗点歌"]
         ):
             yield result
 
     @filter.command("酷我点歌", alias={"酷我音乐点歌"})
     async def play_kuwo_first_song(self, event: AstrMessageEvent):
         """酷我点歌"""
-        await self._ensure_initialized()
-        msg = event.get_message_str().strip()
-        kw = msg
-        if kw.startswith("酷我点歌"):
-            kw = kw[4:].strip()
-        if not kw:
-            yield event.plain_result("请输入要点播的歌曲名称，例如：酷我点歌 一期一会")
-            return
-
-        results = await self._perform_search(kw, "kuwo")
-        if not results:
-            yield event.plain_result(f"未找到歌曲: {kw}")
-            return
-
-        song = results[0]
-        if "source" not in song:
-            song["source"] = "kuwo"
-
-        async for result in self._play_song_logic(
-            event, song, event.unified_msg_origin
+        async for result in self._handle_specific_source_play(
+            event, "kuwo", ["酷我音乐点歌", "酷我点歌"]
         ):
             yield result
 
@@ -1376,8 +1345,8 @@ class MetingPlugin(Star):
             yield idx, segment
             idx += 1
 
-    def _export_segment(self, segment, segment_file: str) -> bool:
-        """导出音频片段到文件
+    def _export_segment_sync(self, segment, segment_file: str) -> bool:
+        """同步导出音频片段到文件（供 run_in_executor 调用）
 
         Args:
             segment: AudioSegment 片段
@@ -1412,8 +1381,6 @@ class MetingPlugin(Star):
                 return
 
             try:
-                from pydub import AudioSegment
-
                 AudioSegment.converter = self._ffmpeg_path
             except ImportError as e:
                 logger.error(f"导入 pydub 失败: {e}")
@@ -1424,9 +1391,13 @@ class MetingPlugin(Star):
             async with audio_lock:
                 try:
                     logger.debug(f"开始处理音频文件: {temp_file}")
+                    loop = asyncio.get_running_loop()
 
                     try:
-                        audio = AudioSegment.from_file(temp_file)
+                        # 在线程池中执行音频文件解码操作，避免阻塞主线程
+                        audio = await loop.run_in_executor(
+                            None, AudioSegment.from_file, temp_file
+                        )
                     except Exception as e:
                         logger.error(f"音频文件解码失败: {e}")
                         yield event.plain_result("音频文件格式不支持或已损坏")
@@ -1449,7 +1420,11 @@ class MetingPlugin(Star):
                         )
                         temp_files_to_cleanup.append(segment_file)
 
-                        if not self._export_segment(segment, segment_file):
+                        # 在线程池中执行音频导出操作
+                        success = await loop.run_in_executor(
+                            None, self._export_segment_sync, segment, segment_file
+                        )
+                        if not success:
                             continue
 
                         try:
