@@ -242,7 +242,7 @@ class MetingPlugin(Star):
                     else:
                         logger.debug("AstrBot 兼容性检查通过。")
                 except Exception as e:
-                    logger.debug(f"AstrBot 兼容性检查失败: {e}。")
+                    logger.debug(f"AstrBot 兼容性检查失败: {e}")
 
     async def initialize(self):
         """插件初始化（框架调用）"""
