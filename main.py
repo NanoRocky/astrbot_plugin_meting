@@ -8,20 +8,22 @@ import shutil
 import tempfile
 import time
 import uuid
-import aiohttp
-import machineid
-import imageio_ffmpeg as ffmpeg
 from collections.abc import Callable
 from typing import Any, TypeVar
 from urllib.parse import parse_qs, quote, urlparse
+
+import aiohttp
+import imageio_ffmpeg as ffmpeg
+import machineid
 from packaging.version import parse as parse_version
+
 from astrbot.api import logger
-from astrbot.core.utils.metrics import Metric
 from astrbot.api.event import AstrMessageEvent, filter
 from astrbot.api.message_components import File, Json, Record
 from astrbot.api.star import Context, Star, register
 from astrbot.core.config.default import VERSION
 from astrbot.core.pipeline.respond import stage
+from astrbot.core.utils.metrics import Metric
 
 PL_VERSION = "1.1.2"
 
@@ -60,13 +62,16 @@ def _force_https(url: str) -> str:
     """Replace the URL scheme with https, only at the start of the string."""
     return _HTTPS_SCHEME_RE.sub("https://", url, count=1)
 
+
 def _generate_guid() -> str:
     """生成基于 machine-id 和 MAC 和 AstrBot 安装 ID 的 GUID"""
     try:
         mid = machineid.id()
-    except:
+    except Exception:
         mid = ""
-    return hashlib.md5(f"{str(mid)}{str(uuid.getnode())}{Metric.get_installation_id()}".encode()).hexdigest()
+    return hashlib.md5(
+        f"{str(mid)}{str(uuid.getnode())}{Metric.get_installation_id()}".encode()
+    ).hexdigest()
 
 
 class MetingPluginError(Exception):
@@ -909,7 +914,8 @@ class MetingPlugin(Star):
                 "gocqhttp",
                 "llonebot",
                 "chronocat",
-                "qqofficial"
+                "qqofficial",
+                "qq_official",
             ):
                 is_qq = True
 
@@ -1110,6 +1116,7 @@ class MetingPlugin(Star):
     @filter.permission_type(filter.PermissionType.ADMIN)
     async def switch_send_mode(self, event: AstrMessageEvent, mode: str = ""):
         """临时切换当前会话的发送方式 [卡片/语音/文件/默认]"""
+        event.stop_event()
         if not mode:
             # Check arguments
             message_str = event.get_message_str().strip()
@@ -1159,6 +1166,7 @@ class MetingPlugin(Star):
     )
     async def switch_tencent(self, event: AstrMessageEvent):
         """切换当前会话的音源为QQ音乐"""
+        event.stop_event()
         async for res in self._switch_source(event, "tencent", "QQ音乐"):
             yield res
 
@@ -1176,18 +1184,21 @@ class MetingPlugin(Star):
     )
     async def switch_netease(self, event: AstrMessageEvent):
         """切换当前会话的音源为网易云"""
+        event.stop_event()
         async for res in self._switch_source(event, "netease", "网易云"):
             yield res
 
     @filter.command("切换酷狗", alias={"切换酷狗音乐", "switch kugou"})
     async def switch_kugou(self, event: AstrMessageEvent):
         """切换当前会话的音源为酷狗"""
+        event.stop_event()
         async for res in self._switch_source(event, "kugou", "酷狗"):
             yield res
 
     @filter.command("切换酷我", alias={"切换酷我音乐", "switch kuwo"})
     async def switch_kuwo(self, event: AstrMessageEvent):
         """切换当前会话的音源为酷我"""
+        event.stop_event()
         async for res in self._switch_source(event, "kuwo", "酷我"):
             yield res
 
@@ -1241,6 +1252,7 @@ class MetingPlugin(Star):
     )
     async def play_netease_first_song(self, event: AstrMessageEvent):
         """网易云点歌"""
+        event.stop_event()
         async for result in self._handle_specific_source_play(
             event,
             "netease",
@@ -1261,6 +1273,7 @@ class MetingPlugin(Star):
     )
     async def play_tencent_first_song(self, event: AstrMessageEvent):
         """QQ音乐点歌"""
+        event.stop_event()
         async for result in self._handle_specific_source_play(
             event,
             "tencent",
@@ -1278,6 +1291,7 @@ class MetingPlugin(Star):
     @filter.command("酷狗点歌", alias={"酷狗音乐点歌", "kugou play"})
     async def play_kugou_first_song(self, event: AstrMessageEvent):
         """酷狗点歌"""
+        event.stop_event()
         async for result in self._handle_specific_source_play(
             event, "kugou", ["酷狗音乐点歌", "酷狗点歌", "kugou play"]
         ):
@@ -1286,6 +1300,7 @@ class MetingPlugin(Star):
     @filter.command("酷我点歌", alias={"酷我音乐点歌", "kuwo play"})
     async def play_kuwo_first_song(self, event: AstrMessageEvent):
         """酷我点歌"""
+        event.stop_event()
         async for result in self._handle_specific_source_play(
             event, "kuwo", ["酷我音乐点歌", "酷我点歌", "kuwo play"]
         ):
@@ -1303,6 +1318,7 @@ class MetingPlugin(Star):
         },
     )
     async def show_commands(self, event: AstrMessageEvent):
+        event.stop_event()
         # 显示所有可用指令
         commands = [
             "🎵 MetingAPI 点歌插件指令列表 🎵",
@@ -1330,6 +1346,7 @@ class MetingPlugin(Star):
     @filter.command("点歌", alias={"play", "play song"})
     async def play_song_cmd(self, event: AstrMessageEvent):
         """点歌指令，支持序号或歌名"""
+        event.stop_event()
         await self._ensure_initialized()
 
         message_str = event.get_message_str().strip()
@@ -1481,6 +1498,7 @@ class MetingPlugin(Star):
         Args:
             event: 消息事件
         """
+        event.stop_event()
         await self._ensure_initialized()
 
         message_str = event.get_message_str().strip()
@@ -1618,6 +1636,7 @@ class MetingPlugin(Star):
             lambda x: isinstance(x, bool),
         )
 
+        url_hash = ""
         if cache_enabled:
             cache_key = f"{source}_{song_id}" if source and song_id else url
             url_hash = hashlib.md5(cache_key.encode()).hexdigest()
