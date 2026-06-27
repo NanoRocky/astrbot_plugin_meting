@@ -25,7 +25,7 @@ from astrbot.core.config.default import VERSION
 from astrbot.core.pipeline.respond import stage
 from astrbot.core.utils.metrics import Metric
 
-PL_VERSION = "1.1.2"
+PL_VERSION = "1.1.3"
 
 SOURCE_DISPLAY = {
     "tencent": "QQ音乐",
