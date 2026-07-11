@@ -1114,6 +1114,7 @@ class MetingPlugin(Star):
     @filter.permission_type(filter.PermissionType.ADMIN)
     async def switch_send_mode(self, event: AstrMessageEvent, mode: str = ""):
         """临时切换当前会话的发送方式 [卡片/语音/文件/默认]"""
+        event.stop_event()
         if not mode:
             # Check arguments
             message_str = event.get_message_str().strip()
@@ -1124,7 +1125,6 @@ class MetingPlugin(Star):
                     break
 
         if not mode:
-            event.stop_event()
             return event.plain_result(
                 "请指定模式：卡片(0)、语音(1)、文件(2) 或 默认(恢复)\n"
                 "示例：/切换发送模式 语音"
@@ -1143,7 +1143,6 @@ class MetingPlugin(Star):
             uid = event.unified_msg_origin
             if uid in self._send_overrides:
                 del self._send_overrides[uid]
-            event.stop_event()
             return event.plain_result("已恢复当前会话的音乐发送模式为全局默认配置。")
 
         if mode in mode_map:
@@ -1151,12 +1150,10 @@ class MetingPlugin(Star):
             uid = event.unified_msg_origin
             self._send_overrides[uid] = val
             mode_name = {0: "卡片", 1: "语音切片", 2: "文件发送"}[val]
-            event.stop_event()
             return event.plain_result(
                 f"已临时将当前会话的音乐发送模式切换为：{mode_name}。"
             )
         else:
-            event.stop_event()
             return event.plain_result(
                 "未知的模式！支持的模式：卡片、语音、文件、默认。"
             )
@@ -1167,8 +1164,8 @@ class MetingPlugin(Star):
     )
     async def switch_tencent(self, event: AstrMessageEvent):
         """切换当前会话的音源为QQ音乐"""
-        res = await self._switch_source(event, "tencent", "QQ音乐")
         event.stop_event()
+        res = await self._switch_source(event, "tencent", "QQ音乐")
         return res
 
     @filter.command(
@@ -1185,22 +1182,22 @@ class MetingPlugin(Star):
     )
     async def switch_netease(self, event: AstrMessageEvent):
         """切换当前会话的音源为网易云"""
-        res = await self._switch_source(event, "netease", "网易云")
         event.stop_event()
+        res = await self._switch_source(event, "netease", "网易云")
         return res
 
     @filter.command("切换酷狗", alias={"切换酷狗音乐", "switch kugou"})
     async def switch_kugou(self, event: AstrMessageEvent):
         """切换当前会话的音源为酷狗"""
-        res = await self._switch_source(event, "kugou", "酷狗")
         event.stop_event()
+        res = await self._switch_source(event, "kugou", "酷狗")
         return res
 
     @filter.command("切换酷我", alias={"切换酷我音乐", "switch kuwo"})
     async def switch_kuwo(self, event: AstrMessageEvent):
         """切换当前会话的音源为酷我"""
-        res = await self._switch_source(event, "kuwo", "酷我")
         event.stop_event()
+        res = await self._switch_source(event, "kuwo", "酷我")
         return res
 
     async def _handle_specific_source_play(
@@ -1252,6 +1249,7 @@ class MetingPlugin(Star):
     )
     async def play_netease_first_song(self, event: AstrMessageEvent):
         """网易云点歌"""
+        event.stop_event()
         await self._handle_specific_source_play(
             event,
             "netease",
@@ -1264,7 +1262,6 @@ class MetingPlugin(Star):
                 "netease song",
             ],
         )
-        event.stop_event()
 
     @filter.command(
         "腾讯点歌",
@@ -1272,6 +1269,7 @@ class MetingPlugin(Star):
     )
     async def play_tencent_first_song(self, event: AstrMessageEvent):
         """QQ音乐点歌"""
+        event.stop_event()
         await self._handle_specific_source_play(
             event,
             "tencent",
@@ -1284,23 +1282,22 @@ class MetingPlugin(Star):
                 "qq play",
             ],
         )
-        event.stop_event()
 
     @filter.command("酷狗点歌", alias={"酷狗音乐点歌", "kugou play"})
     async def play_kugou_first_song(self, event: AstrMessageEvent):
         """酷狗点歌"""
+        event.stop_event()
         await self._handle_specific_source_play(
             event, "kugou", ["酷狗音乐点歌", "酷狗点歌", "kugou play"]
         )
-        event.stop_event()
 
     @filter.command("酷我点歌", alias={"酷我音乐点歌", "kuwo play"})
     async def play_kuwo_first_song(self, event: AstrMessageEvent):
         """酷我点歌"""
+        event.stop_event()
         await self._handle_specific_source_play(
             event, "kuwo", ["酷我音乐点歌", "酷我点歌", "kuwo play"]
         )
-        event.stop_event()
 
     @filter.command(
         "点歌指令",
@@ -1314,6 +1311,7 @@ class MetingPlugin(Star):
         },
     )
     async def show_commands(self, event: AstrMessageEvent):
+        event.stop_event()
         # 显示所有可用指令
         commands = [
             "🎵 MetingAPI 点歌插件指令列表 🎵",
@@ -1336,12 +1334,12 @@ class MetingPlugin(Star):
             "• 切换酷我 - 切换默认音源为酷我音乐",
             "========================",
         ]
-        event.stop_event()
         return event.plain_result("\n".join(commands))
 
     @filter.command("点歌", alias={"play", "play song"})
     async def play_song_cmd(self, event: AstrMessageEvent):
         """点歌指令，支持序号或歌名"""
+        event.stop_event()
         await self._ensure_initialized()
 
         message_str = event.get_message_str().strip()
@@ -1355,7 +1353,6 @@ class MetingPlugin(Star):
                 break
 
         if not arg:
-            event.stop_event()
             return event.plain_result(
                 "请输入要点播的歌曲序号或名称，例如：点歌 1 或 点歌 一期一会"
             )
@@ -1368,11 +1365,9 @@ class MetingPlugin(Star):
             logger.info(f"[点歌] 会话结果数量: {len(results)}")
 
             if not results:
-                event.stop_event()
                 return event.plain_result('请先使用"搜歌 歌曲名"搜索歌曲')
 
             if index < 1 or index > len(results):
-                event.stop_event()
                 return event.plain_result(
                     f"序号超出范围，请输入 1-{len(results)} 之间的序号"
                 )
@@ -1408,7 +1403,6 @@ class MetingPlugin(Star):
             source = await self._get_session_source(session_id)
             results = await self._perform_search(arg, source)
             if not results:
-                event.stop_event()
                 return event.plain_result(f"未找到歌曲: {arg}")
 
             song = results[0]
@@ -1416,8 +1410,6 @@ class MetingPlugin(Star):
                 song["source"] = source
 
             await self._play_song_logic(event, song, session_id)
-
-        event.stop_event()
 
     async def _delete_search_msg(self, event: AstrMessageEvent, msg_id: Any):
         """尝试撤回消息"""
@@ -1493,6 +1485,7 @@ class MetingPlugin(Star):
         Args:
             event: 消息事件
         """
+        event.stop_event()
         await self._ensure_initialized()
 
         message_str = event.get_message_str().strip()
@@ -1506,7 +1499,6 @@ class MetingPlugin(Star):
                 break
 
         if not keyword:
-            event.stop_event()
             return event.plain_result("请输入要搜索的歌曲名称，例如：搜歌 一期一会")
 
         logger.info(f"[搜歌] 搜索模式，关键词: {keyword}")
@@ -1515,11 +1507,9 @@ class MetingPlugin(Star):
         results = await self._perform_search(keyword, source)
 
         if results is None:
-            event.stop_event()
             return event.plain_result("搜索失败，请稍后重试")
 
         if not results:
-            event.stop_event()
             return event.plain_result(f"未找到歌曲: {keyword}")
 
         message = f"🎵 搜索结果 ({SOURCE_DISPLAY.get(source, source)})\n"
@@ -1595,8 +1585,6 @@ class MetingPlugin(Star):
                     session_id, sender_id, withdrawn_timeout, event
                 )
             )
-
-        event.stop_event()
 
     async def _download_song(
         self, url: str, sender_id: str, source: str = "", song_id: str = ""
